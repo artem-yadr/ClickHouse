@@ -17,6 +17,45 @@ namespace DB
 
 namespace bg = boost::geometry;
 
+///QUAD
+typedef struct BoundingBox {
+    float x0; float y0;
+    float x1; float y1;
+} BoundingBox;
+
+
+bool BoundingBoxContainsData(BoundingBox boundary, Coord x, Coord y);
+BoundingBox BoundingBoxMake(float x0, float y0, float x1, float y1);
+
+class QuadTreeNode {
+protected:
+    QuadTreeNode *nW;
+    QuadTreeNode *nE;
+    QuadTreeNode *sW;
+    QuadTreeNode *sE;
+    BoundingBox boundary;
+    size_t count;
+public:
+    QuadTreeNode(BoundingBox boundary);
+    QuadTreeNode();
+    std::vector<size_t> order;
+    
+    static QuadTreeNode* QuadTreeNodeMake(BoundingBox boundary);
+    
+    void insert(const std::vector<Polygon> & polygons_, std::vector<size_t> order);
+    void subdivide();
+    std::vector<size_t> parseDown(Coord x, Coord y, std::vector<size_t> pastNode) const;
+};
+
+class QuadTree : public QuadTreeNode {
+public:
+    QuadTree();
+    QuadTree(const std::vector<Polygon> & polygons_);
+    QuadTree(const std::vector<Polygon> & polygons_, BoundingBox box);
+    static QuadTree* QuadTreeMake(const std::vector<Polygon> & polygons_);
+};
+///
+
 /** An interface for polygon dictionaries.
   * Polygons are read and stored as multi_polygons from boost::geometry in Euclidean coordinates.
   * An implementation should inherit from this base class and preprocess the data upon construction if needed.
