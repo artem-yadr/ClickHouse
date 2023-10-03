@@ -17,6 +17,43 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
+//QUAD
+
+PolygonDictionaryQuad::PolygonDictionaryQuad(
+        const StorageID & dict_id_,
+        const DictionaryStructure & dict_struct_,
+        DictionarySourcePtr source_ptr_,
+        const DictionaryLifetime dict_lifetime_,
+        Configuration configuration_)
+        : IPolygonDictionary(dict_id_, dict_struct_, std::move(source_ptr_), dict_lifetime_, configuration_),
+        qt(polygons)
+{
+}
+
+std::shared_ptr<const IExternalLoadable> PolygonDictionaryQuad::clone() const
+{
+    return std::make_shared<PolygonDictionaryQuad>(
+            this->getDictionaryID(),
+            this->dict_struct,
+            this->source_ptr->clone(),
+            this->dict_lifetime,
+            this->configuration);
+}
+
+bool PolygonDictionaryQuad::find(const Point & point, size_t & polygon_index) const
+{
+    std::vector<size_t> quadrant = qt.parseDown(point.x(), point.y(), qt.order);
+    for (auto & cand : quadrant) {
+        if (bg::covered_by(point, polygons[cand])) {
+            polygon_index = cand;
+            return true;
+        }
+    }
+    return false;
+}
+
+//QUAD
+
 PolygonDictionarySimple::PolygonDictionarySimple(
         const StorageID & dict_id_,
         const DictionaryStructure & dict_struct_,
