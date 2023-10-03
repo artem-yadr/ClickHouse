@@ -18,6 +18,184 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+/// QUAD
+bool BoundingBoxContainsPoint(BoundingBox boundary, Coord x, Coord y) {
+    
+    bool containsX = boundary.x0 <= x && x <= boundary.x1;
+    bool containsY = boundary.y0 <= y && y <= boundary.y1;
+    return containsX && containsY;
+    
+}
+BoundingBox BoundingBoxMake(float x0, float y0, float x1, float y1) {
+    
+    BoundingBox boundingBox;
+    boundingBox.x0 = x0;
+    boundingBox.y0 = y0;
+    boundingBox.x1 = x1;
+    boundingBox.y1 = y1;
+    
+    return boundingBox;
+    
+}
+
+std::vector<size_t> QuadTreeNode::parseDown(Coord x, Coord y, std::vector<size_t> pastNode) const
+{
+    std::vector<size_t> answer = pastNode;
+    
+    if ( BoundingBoxContainsPoint(this->boundary, x, y) ){
+    	pastNode = this->order;
+    	std::vector<size_t> some_nW = this->nW->parseDown(x, y, pastNode);
+    	std::vector<size_t> some_nE = this->nE->parseDown(x, y, pastNode);
+    	std::vector<size_t> some_sW = this->sW->parseDown(x, y, pastNode);
+    	std::vector<size_t> some_sE = this->sE->parseDown(x, y, pastNode);
+    	
+    	if ( some_nW.size() > some_nE.size()) {
+    		answer = some_nW;
+    	} else { 
+		answer = some_nE;  
+		  
+		if ( answer.size() > some_sW.size()) {
+    			answer = some_sW;
+    		} else { 
+			if ( answer.size() > some_sE.size()) {
+				answer = some_sE;
+			}	
+    		}	
+    	}
+    } 
+    
+    return answer;
+}
+
+void QuadTreeNode::subdivide() {
+    BoundingBox box = this->boundary;
+    
+    float xMid = float((box.x1 + box.x0) / 2.0);
+    float yMid = float((box.y1 + box.y0) / 2.0);
+    
+    BoundingBox some_nW = BoundingBoxMake ( box.x0, box.y0, xMid, yMid );
+    this->nW = new QuadTreeNode ( some_nW);
+    
+    BoundingBox some_nE = BoundingBoxMake ( xMid, box.y0, box.x1, yMid );
+    this->nE = new QuadTreeNode ( some_nE);
+    
+    BoundingBox some_sW = BoundingBoxMake ( box.x0, yMid, xMid, box.y1 );
+    this->sW = new QuadTreeNode ( some_sW);
+    
+    BoundingBox some_sE = BoundingBoxMake ( xMid, yMid, box.x1, box.y1 );
+    this->sE = new QuadTreeNode ( some_sE);
+}
+
+void QuadTreeNode::insert(const std::vector<Polygon> & polygons_, std::vector<size_t> order_in) {
+    auto current_box = Box(Point(this->boundary.x0, this->boundary.y0), Point(this->boundary.x1, this->boundary.y1));
+    Polygon tmp_poly;
+    bg::convert(current_box, tmp_poly);
+    std::erase_if(order_in, [&](const auto id)
+    {
+        return !bg::intersects(current_box, polygons_[id]);
+    });
+    auto it = std::find_if(order_in.begin(), order_in.end(), [&](const auto id)
+    {
+        return bg::covered_by(tmp_poly, polygons_[id]);
+    });
+    if (it != order_in.end())
+    {
+        order_in.erase(it + 1, order_in.end());
+    }
+    this->order = order_in;
+    this->count = order_in.size();
+    
+    if ( this->count != 0 ) {
+        if ( this->nW) {
+        	this->subdivide();
+    	}
+    
+        this->nW->insert ( polygons_, order_in );
+        this->nE->insert ( polygons_, order_in );
+        this->sW->insert ( polygons_, order_in );
+        this->sE->insert ( polygons_, order_in );
+    }  
+}
+
+QuadTreeNode::QuadTreeNode(BoundingBox box) {
+    
+    this->boundary = box;
+    this->count = 0;
+}
+
+QuadTreeNode::QuadTreeNode() {
+    this->count = 0;
+}
+
+QuadTree::QuadTree(){
+	this->boundary = BoundingBoxMake(-90, -180, 90, 180);
+}
+QuadTree::QuadTree(const std::vector<Polygon> & polygons_, BoundingBox box) : QuadTreeNode (box) {
+    std::vector<size_t> order(polygons_.size());
+    std::iota(order.begin(), order.end(), 0);
+    this->boundary = boundary;
+    this->insert (polygons_, order);
+}
+
+QuadTree::QuadTree(const std::vector<Polygon> & polygons_) {
+    Coord min_x = 0, min_y = 0;
+    Coord max_x = 0, max_y = 0;
+    bool first = true;
+    std::for_each(polygons_.begin(), polygons_.end(), [&](const auto & polygon)
+    {
+    bg::for_each_point(polygon, [&](const Point & point)
+    {
+         auto x = point.x();
+         auto y = point.y();
+         if (first || x < min_x)
+		min_x = x;
+         if (first || x > max_x)
+                max_x = x;
+         if (first || y < min_y)
+                min_y = y;
+         if (first || y > max_y)
+                max_y = y;
+         if (first)
+                first = false;
+    });
+    });
+    
+    std::vector<size_t> order(polygons_.size());
+    std::iota(order.begin(), order.end(), 0);
+    this->boundary = BoundingBoxMake(min_x, min_y, max_x, max_y);
+    this->insert (polygons_, order);
+}
+
+QuadTreeNode* QuadTreeMake(const std::vector<Polygon> & polygons_) {
+    Coord min_x = 0, min_y = 0;
+    Coord max_x = 0, max_y = 0;
+    bool first = true;
+    std::for_each(polygons_.begin(), polygons_.end(), [&](const auto & polygon)
+    {
+    bg::for_each_point(polygon, [&](const Point & point)
+    {
+         auto x = point.x();
+         auto y = point.y();
+         if (first || x < min_x)
+		min_x = x;
+         if (first || x > max_x)
+                max_x = x;
+         if (first || y < min_y)
+                min_y = y;
+         if (first || y > max_y)
+                max_y = y;
+         if (first)
+                first = false;
+    });
+    });
+    
+    BoundingBox boundary = BoundingBoxMake(min_x, min_y, max_x, max_y);
+    QuadTree *tree = new QuadTree ( polygons_, boundary);
+    return tree;
+    
+}
+/// QUAD
+
 FinalCell::FinalCell(const std::vector<size_t> & polygon_ids_, const std::vector<Polygon> &, const Box &, bool is_last_covered_):
 polygon_ids(polygon_ids_)
 {
